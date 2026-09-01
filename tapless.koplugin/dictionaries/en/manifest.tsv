@@ -1,0 +1,15 @@
+# field	value
+id	en
+name	EN
+language	en
+version	2
+rows	99046
+data	words.buckets.tsv
+index	words.buckets.idx
+sha256_data	f1b076813ca792d08ea792869f8b6fa9a8ae4df2c35e742acd6d064d2bb28504
+sha256_index	2025f331b4bcfd4cac51265974497cbeda267b1a51035919a51f51fd683c1cd8
+popular_data	words.popular.tsv
+popular_index	words.popular.idx
+popular_per_first	256
+sha256_popular_data	1c9f217dc2f31b4e69db948c5ab556ea490fb87e50707f6594f890b469612681
+sha256_popular_index	823a2d30658ee1269f3e7ab56938e31b25c8413f62f23120ece460506315fe46

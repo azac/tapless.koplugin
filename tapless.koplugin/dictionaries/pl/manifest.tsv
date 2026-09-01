@@ -1,0 +1,15 @@
+# field	value
+id	pl
+name	PL
+language	pl
+version	2
+rows	148823
+data	words.buckets.tsv
+index	words.buckets.idx
+sha256_data	1b94d497f6f3af55626d7f0de9df68c3eabf329b66d4756c58f660a0451de929
+sha256_index	721df6936b2371b4b740152151b6c1bd6978e277fe3de7820c2ceee9cbe7948b
+popular_data	words.popular.tsv
+popular_index	words.popular.idx
+popular_per_first	256
+sha256_popular_data	5476a3bef471d60311b234f5ec1a966e7634115bb9074ee3b0f424dafd7ac605
+sha256_popular_index	55788ae2519d46fdb66f4b37f54bb624f1fae2da643798269b7892ca82016f9f
