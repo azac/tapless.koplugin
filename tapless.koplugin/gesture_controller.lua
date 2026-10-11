@@ -11,6 +11,11 @@ function GestureController:new(trace_collector, ui_manager, time_api, geometry)
 end
 
 function GestureController:reset(keyboard, keep_prefetch)
+    if keyboard.swype_mvp_finalize_callback then
+        self.ui_manager:unschedule(keyboard.swype_mvp_finalize_callback)
+        keyboard.swype_mvp_finalize_callback = nil
+    end
+    keyboard.swype_mvp_finalize_deadline = nil
     if keyboard.swype_mvp_trace then
         keyboard:_swypeClearTracePixels("ui")
     end
@@ -24,20 +29,36 @@ function GestureController:reset(keyboard, keep_prefetch)
 end
 
 function GestureController:scheduleFinalize(keyboard)
-    keyboard.swype_mvp_trace_generation =
-        (keyboard.swype_mvp_trace_generation or 0) + 1
-    local generation = keyboard.swype_mvp_trace_generation
-    self.ui_manager:scheduleIn(0.4, function()
-        if keyboard.swype_mvp_closed
-                or keyboard.swype_mvp_trace_generation ~= generation
-                or not keyboard.swype_mvp_trace
-                or not keyboard.swype_mvp_last_point_time
-                or self.time.now() - keyboard.swype_mvp_last_point_time
-                    < self.time.ms(350) then
+    -- Points only move the deadline. The same pending callback checks it
+    -- and reschedules itself, instead of adding a closure for every point.
+    keyboard.swype_mvp_finalize_deadline =
+        keyboard.swype_mvp_last_point_time + self.time.ms(400)
+    if keyboard.swype_mvp_finalize_callback then
+        return
+    end
+    local callback
+    callback = function()
+        if keyboard.swype_mvp_finalize_callback ~= callback then
             return
         end
+        if keyboard.swype_mvp_closed
+                or not keyboard.swype_mvp_trace
+                or not keyboard.swype_mvp_last_point_time then
+            keyboard.swype_mvp_finalize_callback = nil
+            keyboard.swype_mvp_finalize_deadline = nil
+            return
+        end
+        local remaining = keyboard.swype_mvp_finalize_deadline - self.time.now()
+        if remaining > 0 then
+            self.ui_manager:scheduleIn(self.time.to_s(remaining), callback)
+            return
+        end
+        keyboard.swype_mvp_finalize_callback = nil
+        keyboard.swype_mvp_finalize_deadline = nil
         self:finalizeTrace(keyboard)
-    end)
+    end
+    keyboard.swype_mvp_finalize_callback = callback
+    self.ui_manager:scheduleIn(0.4, callback)
 end
 
 function GestureController:addPoint(keyboard, pos)

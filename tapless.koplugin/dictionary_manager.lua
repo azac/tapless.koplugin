@@ -41,6 +41,7 @@ local OPTIONAL_FILES = {
     ["DATA-LICENSE.txt"] = true,
 }
 local Manager = {
+    registry = DictionaryRegistry,
     catalog = nil,
     catalog_path = nil,
     plugin_dir = nil,
@@ -357,6 +358,7 @@ function Manager:_uninstall(id, name)
                 end
             end
             local removed = removeTree(path)
+            DictionaryRegistry:invalidate(id)
             if removed then
                 self:_notify("Uninstalled dictionary: " .. (name or id))
             else
@@ -545,6 +547,7 @@ function Manager:_installPackage(package, zip_path)
         removeTree(temp_dir)
         return nil, err
     end
+    DictionaryRegistry:invalidate(package.id)
     if exists(destination) and not os.rename(destination, backup) then
         removeTree(temp_dir)
         return nil, "Cannot prepare replacement for existing dictionary"
@@ -724,6 +727,7 @@ function Manager:showMenu()
 end
 
 function Manager:open(keyboard, plugin_dir, personal_dictionary)
+    DictionaryRegistry:invalidate()
     self.keyboard = keyboard
     self.plugin_dir = plugin_dir or self.plugin_dir
     self.personal_dictionary = personal_dictionary or self.personal_dictionary

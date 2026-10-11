@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- improved recognition of inaccurate swipe paths
+- better recovery of long words and missed letters
+- faster recognition with a new position-indexed matcher
+- smoother swipe trails and fewer screen refreshes
+- more reliable gesture completion
+- minor language and dictionary fixes
+
 ## 0.4.0
 
 - personalized dictionaries

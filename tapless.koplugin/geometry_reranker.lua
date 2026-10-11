@@ -2,8 +2,10 @@ local GeometryReranker = {
     SAMPLE_COUNT = 20,
     RANK_WEIGHT = 1800,
     MAX_SCORE = 2,
+    IDEAL_CACHE_LIMIT = 128,
 }
 GeometryReranker.__index = GeometryReranker
+local EMPTY_CENTERS = {}
 
 local function distance(left, right)
     local dx = left.x - right.x
@@ -86,22 +88,85 @@ local function candidatePath(signature, key_centers)
 end
 
 function GeometryReranker:new()
-    return setmetatable({}, self)
+    return setmetatable({ ideal_cache = {}, cache_order = {}, cache_next = 1 }, self)
 end
 
-function GeometryReranker:score(points, signature, key_centers)
-    local ideal_points, scale = candidatePath(signature, key_centers or {})
-    if not ideal_points then
-        return nil
+function GeometryReranker:_ensureGeometry(key_centers)
+    local unchanged = self.cache_geometry
+        and self.cache_sample_count == self.SAMPLE_COUNT
+        and self.cache_limit == self.IDEAL_CACHE_LIMIT
+    local count = 0
+    if unchanged then
+        -- keyCenters() returns a new table for each recognition. Compare
+        -- coordinates, sizes and membership rather than table identity.
+        for byte, center in pairs(key_centers) do
+            count = count + 1
+            local cached = self.cache_geometry[byte]
+            if not cached or cached.x ~= center.x or cached.y ~= center.y
+                    or cached.size ~= center.size then
+                unchanged = false
+                break
+            end
+        end
+        unchanged = unchanged and count == self.cache_center_count
     end
-    local actual_samples, actual_length = resample(
-        trimTrace(points), self.SAMPLE_COUNT)
-    local ideal_samples, ideal_length = resample(
-        ideal_points, self.SAMPLE_COUNT)
-    if not actual_samples or not ideal_samples then
-        return nil
+    if unchanged then
+        return
     end
+    local geometry = {}
+    count = 0
+    for byte, center in pairs(key_centers) do
+        geometry[byte] = { x = center.x, y = center.y, size = center.size }
+        count = count + 1
+    end
+    self.cache_geometry = geometry
+    self.cache_center_count = count
+    self.cache_sample_count = self.SAMPLE_COUNT
+    self.cache_limit = self.IDEAL_CACHE_LIMIT
+    self.ideal_cache = {}
+    self.cache_order = {}
+    self.cache_next = 1
+end
 
+function GeometryReranker:_idealPath(signature, key_centers)
+    local cached = self.ideal_cache[signature]
+    if cached ~= nil then
+        return cached or nil
+    end
+    local ideal_points, scale = candidatePath(signature, key_centers)
+    local ideal
+    if ideal_points then
+        local samples, length = resample(ideal_points, self.SAMPLE_COUNT)
+        if samples then
+            ideal = { samples = samples, length = length, scale = scale }
+        end
+    end
+    -- A FIFO ring bounds retained paths and makes eviction constant-time.
+    -- Missing/zero-length paths are cached too, within the same limit.
+    if self.IDEAL_CACHE_LIMIT > 0 then
+        local slot = self.cache_next
+        local evicted = self.cache_order[slot]
+        if evicted then
+            self.ideal_cache[evicted] = nil
+        end
+        self.cache_order[slot] = signature
+        self.ideal_cache[signature] = ideal or false
+        self.cache_next = slot % self.IDEAL_CACHE_LIMIT + 1
+    end
+    return ideal
+end
+
+function GeometryReranker:_scoreSamples(actual_samples, actual_length,
+        signature, key_centers)
+    if not actual_samples then
+        return nil
+    end
+    local ideal = self:_idealPath(signature, key_centers)
+    if not ideal then
+        return nil
+    end
+    local ideal_samples, ideal_length, scale =
+        ideal.samples, ideal.length, ideal.scale
     local distance_total = 0
     for index = 1, self.SAMPLE_COUNT do
         distance_total = distance_total
@@ -113,7 +178,87 @@ function GeometryReranker:score(points, signature, key_centers)
     return math.min(self.MAX_SCORE, shape_score * 0.85 + length_score * 0.15)
 end
 
-function GeometryReranker:rerank(candidates, trace_info, key_centers, limit)
+function GeometryReranker:score(points, signature, key_centers)
+    key_centers = key_centers or EMPTY_CENTERS
+    self:_ensureGeometry(key_centers)
+    local actual_samples, actual_length = resample(
+        trimTrace(points), self.SAMPLE_COUNT)
+    return self:_scoreSamples(actual_samples, actual_length, signature, key_centers)
+end
+
+function GeometryReranker:prepareTrace(points)
+    local samples, length = resample(trimTrace(points), self.SAMPLE_COUNT)
+    if samples then return { samples = samples, length = length } end
+end
+
+function GeometryReranker:measurePath(signature, key_centers)
+    if #signature < 2 then return end
+    local total, size, previous = 0, 0, nil
+    for index = 1, #signature do
+        local center = key_centers[string.byte(signature, index)]
+        if not center then return end
+        size = size + math.max(1, center.size or 1)
+        if previous then total = total + distance(previous, center) end
+        previous = center
+    end
+    if total > 0 then return total, size / #signature end
+end
+
+-- Flat scratch samples for shape search; do not fill the bounded ideal
+-- cache with the hundreds of paths inspected but not returned as words.
+function GeometryReranker:samplePathInto(signature, key_centers, length, samples)
+    local segment, passed = 2, 0
+    local a, b = key_centers[signature:byte(1)], key_centers[signature:byte(2)]
+    local segment_length = distance(a, b)
+    for index = 1, self.SAMPLE_COUNT do
+        local target = length * (index - 1) / (self.SAMPLE_COUNT - 1)
+        while segment < #signature and passed + segment_length < target do
+            passed = passed + segment_length
+            segment = segment + 1
+            a, b = b, key_centers[signature:byte(segment)]
+            segment_length = distance(a, b)
+        end
+        local ratio = segment_length > 0 and (target - passed) / segment_length or 0
+        samples[index * 2 - 1] = a.x + (b.x - a.x) * ratio
+        samples[index * 2] = a.y + (b.y - a.y) * ratio
+    end
+end
+
+-- Generate each ideal sample only when it will be compared. The partial
+-- distance sum is a lower bound on the final score: stop at the same
+-- bound as shape search, before producing the unused remaining samples.
+function GeometryReranker:scorePathUntil(signature, key_centers, length, scale,
+        swipe, worst, frequency, rank_weight, max_shape)
+    local segment, passed, total = 2, 0, 0
+    local a, b = key_centers[signature:byte(1)], key_centers[signature:byte(2)]
+    local segment_length = distance(a, b)
+    local count = self.SAMPLE_COUNT
+    local length_term = math.min(self.MAX_SCORE,
+        math.abs(swipe.length - length) / math.max(scale, length)) * 0.15
+    for index = 1, count do
+        local target = length * (index - 1) / (count - 1)
+        while segment < #signature and passed + segment_length < target do
+            passed = passed + segment_length
+            segment = segment + 1
+            a, b = b, key_centers[signature:byte(segment)]
+            segment_length = distance(a, b)
+        end
+        local ratio = segment_length > 0 and (target - passed) / segment_length or 0
+        local point = swipe.samples[index]
+        local dx = point.x - (a.x + (b.x - a.x) * ratio)
+        local dy = point.y - (a.y + (b.y - a.y) * ratio)
+        total = total + math.sqrt(dx * dx + dy * dy)
+        local bound = math.min(self.MAX_SCORE, total / count / scale * 0.85 + length_term)
+        if (max_shape and bound > max_shape)
+                or (worst and rank_weight * bound - frequency >= worst) then
+            return nil, bound
+        end
+    end
+    return math.min(self.MAX_SCORE, total / count / scale * 0.85 + length_term)
+end
+
+function GeometryReranker:rerank(candidates, trace_info, key_centers, limit,
+        rank_weight, prepared)
     limit = limit or #candidates
     if #candidates == 0 then
         return candidates
@@ -124,9 +269,17 @@ function GeometryReranker:rerank(candidates, trace_info, key_centers, limit)
     local score_count = 0
     local points = trace_info and trace_info.points
     if points and #points >= 2 then
+        key_centers = key_centers or EMPTY_CENTERS
+        self:_ensureGeometry(key_centers)
+        -- Actual samples belong to this call only: the caller may edit or
+        -- reuse a trace before the next recognition.
+        prepared = prepared or self:prepareTrace(points)
+        local actual_samples = prepared and prepared.samples
+        local actual_length = prepared and prepared.length
         for index, candidate in ipairs(candidates) do
             local signature = candidate.gesture_signature or candidate.signature
-            local score = self:score(points, signature, key_centers)
+            local score = self:_scoreSamples(
+                actual_samples, actual_length, signature, key_centers)
             scores[index] = score
             if score then
                 score_total = score_total + score
@@ -141,7 +294,7 @@ function GeometryReranker:rerank(candidates, trace_info, key_centers, limit)
             local score = scores[index] or neutral_score
             candidate.geometry_score = score
             candidate.ranked_score = candidate.ranked_score
-                + math.floor(score * self.RANK_WEIGHT + 0.5)
+                + math.floor(score * (rank_weight or self.RANK_WEIGHT) + 0.5)
             candidate.geometry_order = index
         end
         table.sort(candidates, function(left, right)

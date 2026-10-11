@@ -38,8 +38,8 @@ end
 local VirtualKey = assert(findUpvalue(VirtualKeyboard.addKeys, "VirtualKey"),
     "Tapless: incompatible KOReader VirtualKeyboard.addKeys")
 local CandidateRow = dofile(plugin_dir .. "/candidate_row.lua")
-local DictionaryRegistry = dofile(plugin_dir .. "/dictionary_registry.lua")
 local DictionaryManager = dofile(plugin_dir .. "/dictionary_manager.lua")
+local DictionaryRegistry = DictionaryManager.registry
 local DictionaryIndex = dofile(plugin_dir .. "/dictionary_index.lua")
 local DictionaryStore = dofile(plugin_dir .. "/dictionary_store.lua")
     :new(plugin_dir, DictionaryRegistry, DictionaryIndex, time)
@@ -52,6 +52,8 @@ local KeyboardGeometry = dofile(plugin_dir .. "/keyboard_geometry.lua")
 local PrefetchController = dofile(plugin_dir .. "/prefetch_controller.lua")
 local Scoring = dofile(plugin_dir .. "/scoring.lua"):new(Normalization)
 local GeometryReranker = dofile(plugin_dir .. "/geometry_reranker.lua"):new()
+local ShapeChannel = dofile(plugin_dir .. "/shape_channel.lua")
+    :new(DictionaryStore, GeometryReranker, PersonalDictionary)
 local TraceCollector = dofile(plugin_dir .. "/trace_collector.lua")
 local GestureController = dofile(plugin_dir .. "/gesture_controller.lua")
     :new(TraceCollector, UIManager, time, Geom)
@@ -92,7 +94,32 @@ local KeyboardUI = dofile(plugin_dir .. "/keyboard_ui.lua"):new{
     screen = Screen,
 }
 local RecognitionEngine = dofile(plugin_dir .. "/recognition_engine.lua")
-    :new(DictionaryStore, Scoring, GeometryReranker, PersonalDictionary)
+    :new(DictionaryStore, Scoring, GeometryReranker, PersonalDictionary, ShapeChannel)
+
+-- Diagnostic mode is explicitly enabled by a removable file, for at most
+-- 30 gestures. The usual keyboard does not load or wrap the profiler.
+local profile_flag = io.open(plugin_dir .. "/profile.enabled", "r")
+if profile_flag then
+    profile_flag:close()
+    local C = require("ffi").C
+    dofile(plugin_dir .. "/latency_profiler.lua"):new{
+        time = { now = time.monotonic, ms = time.ms }, ui = UIManager,
+        path = "/tmp/tapless-latency-profile.tsv",
+        event_now = function()
+            local detector = Device.input and Device.input.gesture_detector
+            local clock = detector and detector:getClockSource()
+            if clock == C.CLOCK_MONOTONIC then return time.monotonic(), "monotonic" end
+            if clock == C.CLOCK_REALTIME then return time.realtime(), "realtime" end
+            if clock == C.CLOCK_BOOTTIME then return time.boottime(), "boottime" end
+        end,
+    }:install{
+        gesture_controller = GestureController, trace_collector = TraceCollector,
+        trace_renderer = TraceRenderer, keyboard_geometry = KeyboardGeometry,
+        input_controller = InputController, keyboard_ui = KeyboardUI,
+        dictionary_store = DictionaryStore, engine = RecognitionEngine,
+        shape_channel = ShapeChannel, screen = Screen,
+    }
+end
 
 return dofile(plugin_dir .. "/koreader_adapter.lua"):new{
     input_session = InputSession,

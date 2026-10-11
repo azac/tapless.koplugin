@@ -231,6 +231,11 @@ function KoreaderAdapter:install(VirtualKeyboard)
             dictionary = self.swype_mvp_dictionary or "en",
             trace_info = trace_info,
             key_centers = key_centers,
+            start_letters = function(first)
+                local point = trace_info and trace_info.points and trace_info.points[1]
+                return adapter.keyboard_geometry:startLetters(
+                    self.layout, point, first, self.swype_mvp_normalization_profile)
+            end,
             endpoint_letters = function(last)
                 return self:_swypeEndpointLetters(
                     trace_info.endpoint_pos, last)

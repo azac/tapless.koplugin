@@ -1,4 +1,4 @@
-local KeyboardGeometry = {}
+local KeyboardGeometry = { START_REACH = 0.25, END_REACH = 0.5 }
 KeyboardGeometry.__index = KeyboardGeometry
 
 function KeyboardGeometry:new(normalization)
@@ -28,7 +28,15 @@ function KeyboardGeometry:keyAt(layout, pos, profile)
     end
 end
 
-function KeyboardGeometry:endpointLetters(layout, pos, exact_last, profile)
+local function gapTo(dimen, pos)
+    local dx = math.max(dimen.x - pos.x, 0, pos.x - dimen.x - dimen.w)
+        / math.max(1, dimen.w)
+    local dy = math.max(dimen.y - pos.y, 0, pos.y - dimen.y - dimen.h)
+        / math.max(1, dimen.h)
+    return math.sqrt(dx * dx + dy * dy)
+end
+
+function KeyboardGeometry:endpointLetters(layout, pos, exact_last, profile, reach)
     local candidates = {}
     local seen = {}
     if exact_last and #exact_last == 1 then
@@ -41,7 +49,8 @@ function KeyboardGeometry:endpointLetters(layout, pos, exact_last, profile)
     local nearby = {}
     for _, row in ipairs(layout) do
         for _, key in ipairs(row) do
-            if key.dimen and not key.is_swype_candidate then
+            if key.dimen and not key.is_swype_candidate
+                    and gapTo(key.dimen, pos) < (reach or self.END_REACH) then
                 local normalized = self.normalization:normalizeText(
                     key.key or key.label, profile)
                 if #normalized == 1 and not seen[normalized] then
@@ -61,10 +70,17 @@ function KeyboardGeometry:endpointLetters(layout, pos, exact_last, profile)
         return left.distance < right.distance
     end)
     for index = 1, math.min(2, #nearby) do
-        table.insert(candidates, nearby[index].letter)
-        seen[nearby[index].letter] = true
+        local letter = nearby[index].letter
+        if not seen[letter] then
+            table.insert(candidates, letter)
+            seen[letter] = true
+        end
     end
     return candidates
+end
+
+function KeyboardGeometry:startLetters(layout, pos, exact_first, profile)
+    return self:endpointLetters(layout, pos, exact_first, profile, self.START_REACH)
 end
 
 function KeyboardGeometry:keyCenters(layout, profile)

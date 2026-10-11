@@ -15,7 +15,33 @@ local REQUIRED_FILES = {
     popular_index = "words.popular.idx",
 }
 
-local Registry = {}
+local Registry = { caches = {} }
+
+function Registry:_cache(plugin_dir)
+    plugin_dir = plugin_dir or DEFAULT_PLUGIN_DIR
+    local external_root = self:externalRoot()
+    local key = external_root .. "\0" .. plugin_dir
+    local cache = self.caches[key]
+    if not cache then
+        cache = { descriptors = {}, external_root = external_root,
+            plugin_dir = plugin_dir }
+        self.caches[key] = cache
+    end
+    return cache
+end
+
+-- Installation/removal invalidates all path contexts for this language.
+-- Opening the manager also rescans packages copied manually onto the device.
+function Registry:invalidate(id)
+    if not id then
+        self.caches = {}
+        return
+    end
+    for _, cache in pairs(self.caches) do
+        cache.descriptors[id] = nil
+        cache.list = nil
+    end
+end
 
 local function isDirectory(path)
     return path and lfs.attributes(path, "mode") == "directory"
@@ -125,13 +151,18 @@ function Registry:get(id, plugin_dir)
     if not self:isSafeId(id) then
         return nil
     end
-    local external = self:externalRoot() .. "/" .. id
-    local descriptor = self:_readDescriptor(external, id, false)
-    if descriptor then
-        return descriptor
+    local cache = self:_cache(plugin_dir)
+    if cache.descriptors[id] ~= nil then
+        return cache.descriptors[id] or nil
     end
-    local bundled = (plugin_dir or DEFAULT_PLUGIN_DIR) .. "/dictionaries/" .. id
-    return self:_readDescriptor(bundled, id, true)
+    local external = cache.external_root .. "/" .. id
+    local descriptor = self:_readDescriptor(external, id, false)
+    if not descriptor then
+        local bundled = cache.plugin_dir .. "/dictionaries/" .. id
+        descriptor = self:_readDescriptor(bundled, id, true)
+    end
+    cache.descriptors[id] = descriptor or false
+    return descriptor
 end
 
 function Registry:isAvailable(id, plugin_dir)
@@ -139,14 +170,21 @@ function Registry:isAvailable(id, plugin_dir)
 end
 
 function Registry:list(plugin_dir)
-    plugin_dir = plugin_dir or DEFAULT_PLUGIN_DIR
+    local cache = self:_cache(plugin_dir)
+    if cache.list then
+        local result = {}
+        for index, descriptor in ipairs(cache.list) do
+            result[index] = descriptor
+        end
+        return result
+    end
+    plugin_dir = cache.plugin_dir
     local found = {}
-    local external_root = self:externalRoot()
+    local external_root = cache.external_root
     if isDirectory(external_root) then
         for id in lfs.dir(external_root) do
             if self:isSafeId(id) then
-                local descriptor = self:_readDescriptor(
-                    external_root .. "/" .. id, id, false)
+                local descriptor = self:get(id, plugin_dir)
                 if descriptor then
                     found[id] = descriptor
                 end
@@ -157,8 +195,7 @@ function Registry:list(plugin_dir)
     if isDirectory(bundled_root) then
         for id in lfs.dir(bundled_root) do
             if self:isSafeId(id) and not found[id] then
-                local descriptor = self:_readDescriptor(
-                    bundled_root .. "/" .. id, id, true)
+                local descriptor = self:get(id, plugin_dir)
                 if descriptor then
                     found[id] = descriptor
                 end
@@ -177,7 +214,13 @@ function Registry:list(plugin_dir)
         if right.id == "pl" then return false end
         return left.id < right.id
     end)
-    return result
+    cache.list = result
+    -- Return a separate array so callers cannot reorder the cached list.
+    local copy = {}
+    for index, descriptor in ipairs(result) do
+        copy[index] = descriptor
+    end
+    return copy
 end
 
 function Registry:shortLabel(id, plugin_dir)

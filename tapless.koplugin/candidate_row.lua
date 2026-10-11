@@ -73,6 +73,7 @@ end
 
 function CandidateRow:refresh(options)
     local candidates = options.candidates or {}
+    local refresh_region
     for index, virtual_key in ipairs(options.keys or {}) do
         if not options.only_index or index == options.only_index then
             local word = slotText(index, candidates, options.dictionary_label,
@@ -84,13 +85,18 @@ function CandidateRow:refresh(options)
                 virtual_key.swype_mvp_label_widget:setText(word)
             end
             if changed and virtual_key[1] and virtual_key[1].dimen then
+                local dimen = virtual_key[1].dimen
                 options.UIManager:widgetRepaint(
-                    virtual_key[1], virtual_key[1].dimen.x,
-                    virtual_key[1].dimen.y)
-                options.UIManager:setDirty(
-                    nil, options.refresh_type or "ui", virtual_key[1].dimen)
+                    virtual_key[1], dimen.x, dimen.y)
+                -- Include the gaps between changed keys so the display gets
+                -- one update for the suggestions instead of one per key.
+                refresh_region = refresh_region and refresh_region:combine(dimen)
+                    or dimen:copy()
             end
         end
+    end
+    if refresh_region then
+        options.UIManager:setDirty(nil, options.refresh_type or "ui", refresh_region)
     end
 end
 

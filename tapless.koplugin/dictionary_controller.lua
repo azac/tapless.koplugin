@@ -64,8 +64,10 @@ function DictionaryController:setDictionary(keyboard, dictionary)
     self.settings:saveSetting(self.setting_key, dictionary)
     self.logger.info(
         "swype mvp dictionary selected", keyboard.swype_mvp_dictionary)
-    keyboard:_swypeClearCandidateRow("ui")
+    -- Refresh the language tile before clearing suggestions: the row refresh
+    -- also updates its label, which would make the flashing refresh a no-op.
     keyboard:_swypeRefreshCandidateRow("flashui", 1)
+    keyboard:_swypeClearCandidateRow("ui")
     keyboard:_swypeScheduleWarmUp(0.1)
     return true
 end
