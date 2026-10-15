@@ -1,6 +1,3 @@
--- Tapless scoring facade with a replacement position-indexed matcher.
--- Historical Ligature adaptation and unresolved license scope are documented
--- in docs/THIRD_PARTY_CODE.md and docs/MATCHER_REWRITE.md; notices are retained.
 local source_dir = debug.getinfo(1, "S").source:match("^@(.+)/[^/]+$") or "."
 local Matcher = dofile(source_dir .. "/gesture_matcher.lua")
 local Scoring = {
@@ -347,6 +344,15 @@ function Scoring:warm()
         end
     end
     self.warmed = true
+end
+
+
+function Scoring:scoreEntriesBatch(signature, entries, trace_chars, nexts, trace, centers,
+        ends, start, near, dictionary, language, context_bonus, work)
+    if not self.matcher.scanEntries then return nil end
+    local data=self.matcher:prepare(trace_chars,trace and trace.observations,work)
+    return self.matcher:scanEntries(signature,entries,data,nexts,trace,centers,start,ends,
+        near,dictionary,language,context_bonus,work)
 end
 
 return Scoring

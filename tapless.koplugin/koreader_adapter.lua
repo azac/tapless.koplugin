@@ -204,6 +204,11 @@ function KoreaderAdapter:install(VirtualKeyboard)
     end
 
     function VirtualKeyboard:_swypeScheduleBucketPrefetch()
+        local dictionary = self.swype_mvp_dictionary or "en"
+        if adapter.recognition_engine:usesNativeDictionary(dictionary) then
+            self:_swypeCancelBucketPrefetch()
+            return
+        end
         local trace = self.swype_mvp_trace
         local priority_lasts
         if trace and trace.points and #trace.points > 0
@@ -214,7 +219,7 @@ function KoreaderAdapter:install(VirtualKeyboard)
                 self.swype_mvp_normalization_profile)
         end
         self.swype_mvp_prefetch_controller:schedule(
-            trace, self.swype_mvp_dictionary or "en", priority_lasts)
+            trace, dictionary, priority_lasts)
     end
 
     function VirtualKeyboard:_swypeReset(keep_prefetch)
@@ -240,6 +245,8 @@ function KoreaderAdapter:install(VirtualKeyboard)
                 return self:_swypeEndpointLetters(
                     trace_info.endpoint_pos, last)
             end,
+            native_context_counts = adapter.input_controller.context_model:countsAfter(trace_info and trace_info.previous_word),
+            native_context_pure = true, -- ContextModel:bonus reads counts without mutating them.
             context_bonus = function(previous_word, word)
                 return self:_swypeContextBonus(previous_word, word)
             end,

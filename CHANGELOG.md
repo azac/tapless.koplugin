@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+
+- native C acceleration for dictionary lookup and swipe recognition
+- performance and reliability improvements
+
 ## 0.5.0
 
 - improved recognition of inaccurate swipe paths

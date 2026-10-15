@@ -9,11 +9,22 @@ local fields = { "id", "source", "dictionary", "letters", "clock", "event_delay_
     "heap_delta_kib", "snapshot_wall_ms", "previous_word_wall_ms", "clear_trace_wall_ms",
     "key_centers_wall_ms", "recognition_wall_ms", "recognition_cpu_ms",
     "scan_wall_ms", "scan_cpu_ms", "dynamic_wall_ms", "dynamic_cpu_ms",
+    "fast_dynamic_wall_ms", "fast_dynamic_cpu_ms", "fast_rerank_wall_ms", "fast_rerank_cpu_ms",
     "shape_wall_ms", "shape_cpu_ms", "shape_align_wall_ms", "shape_align_cpu_ms",
     "rerank_wall_ms", "rerank_cpu_ms", "bucket_wall_ms", "bucket_cpu_ms", "bucket_calls",
     "insert_wall_ms", "candidate_row_wall_ms", "paint_wall_ms", "paint_cpu_ms",
     "driver_wall_ms", "driver_cpu_ms", "driver_calls", "wait_complete_wall_ms",
-    "wait_submission_wall_ms", "shape_entries", "shape_compared", "shape_exhausted" }
+    "wait_submission_wall_ms", "shape_entries", "shape_compared", "shape_exhausted",
+    "fast_enabled", "fast_profile", "fast_checked", "fast_attempted", "fast_accepted", "fast_reason",
+    "fast_signature_length", "fast_trace_points", "fast_has_endpoint",
+    "fast_has_start_center", "fast_has_end_center", "fast_start", "fast_endpoint",
+    "fast_length", "fast_shape", "fast_spatial", "fast_margin", "fast_alt_margin", "fast_stable",
+    "fast_boundary_limit", "fast_shape_limit", "fast_spatial_limit", "fast_margin_limit", "fast_min_length" }
+local gate_reasons = { trace = true, boundary = true, competition = true, geometry = true,
+    scale = true, length = true, shape = true, spatial = true, margin = true, accepted = true }
+local gate_numbers = { "start", "endpoint", "length", "shape", "spatial", "margin", "alt_margin" }
+local gate_limits = { boundary = "fast_boundary_limit", shape = "fast_shape_limit",
+    spatial = "fast_spatial_limit", margin = "fast_margin_limit", min_length = "fast_min_length" }
 
 function Profiler:new(options)
     return setmetatable({ time = assert(options.time), cpu = options.cpu or os.clock,
@@ -51,6 +62,39 @@ function Profiler:phase(name)
     if record.phase then self:_duration(record, record.phase, record.phase_wall, record.phase_cpu) end
     record.phase = name
     record.phase_wall, record.phase_cpu = self.time.now(), self.cpu()
+end
+
+function Profiler:_captureFastGate(engine, attempt)
+    local record = self.active
+    if not record then return end
+    local gate = engine.fast_gate
+    record.fast_enabled = gate and 1 or 0
+    record.fast_checked, record.fast_attempted, record.fast_accepted = 0, 0, 0
+    record.fast_reason = gate and "not_checked" or "disabled"
+    if not gate then return end
+    record.fast_profile = gate.profile
+    local signature = attempt.signature or ""
+    local trace = attempt.trace_info or {}
+    local centers = attempt.key_centers or {}
+    record.fast_signature_length = #signature
+    record.fast_trace_points = trace.points and #trace.points or 0
+    record.fast_has_endpoint = trace.endpoint_pos and 1 or 0
+    record.fast_has_start_center = centers[signature:byte(1)] and 1 or 0
+    record.fast_has_end_center = centers[signature:byte(-1)] and 1 or 0
+    for name, field in pairs(gate_limits) do
+        record[field] = gate.policy and gate.policy[name]
+    end
+    local stats = engine.fast_stats
+    if not stats then return end
+    record.fast_checked = stats.reason and 1 or 0
+    record.fast_attempted = stats.attempted and 1 or 0
+    record.fast_accepted = stats.accepted and 1 or 0
+    if stats.reason then record.fast_reason = gate_reasons[stats.reason] and stats.reason or "unknown" end
+    -- Copy only numeric diagnostics; stats.word and the gesture remain private.
+    for _, name in ipairs(gate_numbers) do
+        if type(stats[name]) == "number" then record["fast_" .. name] = stats[name] end
+    end
+    if stats.stable ~= nil then record.fast_stable = stats.stable and 1 or 0 end
 end
 
 function Profiler:_flush(record, status)
@@ -157,8 +201,10 @@ function Profiler:install(options)
     self:span(options.engine, "pickCandidates", "recognition")
     self:_wrap(options.engine, "pickCandidates", function(original, engine, attempt)
         local result = pack(original(engine, attempt))
+        self:_captureFastGate(engine, attempt)
         local stats = options.shape_channel and options.shape_channel.last_stats
-        if self.active and stats and options.shape_channel:triggered(attempt.signature) then
+        -- A fast result never runs shape search; its previous counters are stale.
+        if self.active and self.active.shape_wall_ms and stats then
             self.active.shape_entries, self.active.shape_compared = stats.entries, stats.compared
             self.active.shape_exhausted = stats.exhausted and 1 or 0
         end

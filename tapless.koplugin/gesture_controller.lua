@@ -121,6 +121,7 @@ function GestureController:finalizeTrace(keyboard)
     local finalized = keyboard:_swypeFinalizeSignature(
         snapshot.signature, trace_info)
     keyboard:_swypeCancelBucketPrefetch()
+    if self.refresh_batch then self.refresh_batch:queue(keyboard) end
     return finalized
 end
 

@@ -15,6 +15,7 @@ function DictionaryStore:new(plugin_dir, registry, dictionary_index, time_api)
         popular_cache = {},
         word_presence_cache = {},
         prefetch_jobs = {},
+        native_descriptors = {},
     }, self)
 end
 
@@ -106,6 +107,8 @@ function DictionaryStore:keepOnly(dictionary)
 end
 
 function DictionaryStore:invalidate(dictionary)
+    self.native_generation = (self.native_generation or 0) + 1
+    self.native_descriptors[dictionary] = nil
     local package = self.packages[dictionary]
     if package and package.file then
         package.file:close()
@@ -295,6 +298,15 @@ function DictionaryStore:loadPopularWords(first, dictionary)
     local bucket = self.dictionary_index:readBucket(package.popular_file, meta)
     cache[first] = bucket.entries
     return bucket.entries
+end
+
+-- The native reader owns its file handles and invalidates on this generation.
+function DictionaryStore:nativePaths(dictionary)
+    dictionary = dictionary or "en"
+    if self.native_descriptors[dictionary] == nil then
+        self.native_descriptors[dictionary] = self.registry:get(dictionary, self.plugin_dir) or false
+    end
+    return self.native_descriptors[dictionary] or nil
 end
 
 return DictionaryStore

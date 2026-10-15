@@ -79,4 +79,8 @@ function ContextModel:save()
     end
 end
 
+function ContextModel:countsAfter(previous_word)
+    return previous_word and self:getCounts()[previous_word] or {}
+end
+
 return ContextModel

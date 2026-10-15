@@ -51,7 +51,7 @@ function ShapeChannel:_lettersNear(point, centers)
     return letters
 end
 
-function ShapeChannel:candidates(options)
+function ShapeChannel:candidatesLua(options)
     local stats = { entries = 0, compared = 0, buckets = 0, exhausted = false }
     self.last_stats = stats
     if not self:triggered(options.signature) then return {} end
@@ -161,6 +161,22 @@ function ShapeChannel:candidates(options)
     end
     if start then stats.elapsed_ms = (clock.now() - start) / clock.ms(1) end
     return found
+end
+
+function ShapeChannel:candidates(options)
+    if self.native_factory then
+        if not self.native then
+            local ok, native = pcall(self.native_factory)
+            if ok then self.native = native else self.native_factory = nil end
+        end
+        if self.native then
+            local ok, result = pcall(self.native.candidates, self.native, self, options)
+            if ok and result then return result end
+            self.native_reason = ok and "unsupported shape input" or tostring(result)
+            self.native_fallbacks = (self.native_fallbacks or 0) + 1
+        end
+    end
+    return self:candidatesLua(options)
 end
 
 return ShapeChannel

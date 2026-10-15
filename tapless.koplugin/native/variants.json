@@ -1,0 +1,47 @@
+{
+  "zig": "0.13.0",
+  "cpu": "cortex_a8",
+  "variants": [
+    {
+      "name": "kindle-softfp",
+      "file": "libtapless-core-armv7-softfp-glibc212.so",
+      "target": "arm-linux-gnueabi.2.12",
+      "float_abi": "softfp",
+      "bytes": 122808,
+      "sha256": "ec43b25e1eb3a8294812b88fda3e8d16400f2db15456b8a5b982bc3c55462fc0"
+    },
+    {
+      "name": "kobo-hf",
+      "file": "libtapless-core-armv7-hf-glibc215.so",
+      "target": "arm-linux-gnueabihf.2.15",
+      "float_abi": "hard",
+      "bytes": 122496,
+      "sha256": "092bc2056dfaccd03a42ef02a50083dbe9ae329e36c111308f78e911b61afdb4"
+    },
+    {
+      "name": "pocketbook-softfp",
+      "file": "libtapless-core-armv7-softfp-glibc25.so",
+      "target": "arm-linux-gnueabi.2.5",
+      "float_abi": "softfp",
+      "bytes": 122808,
+      "sha256": "4db5ea6f56c6f7277c0cc31fc5bb3d0d438770e4d6b74b65286f15c943f3968e"
+    }
+  ],
+  "current_library": {
+    "file": "libtapless-core.so",
+    "sha256": "a5abb42c11171331a0bb962326d8b931f5640a0986f49f0631d38c11750555a8",
+    "status": "unchanged from installed 0.5.7"
+  },
+  "source_sha256": {
+    "core.c": "f91415773d0518d5fdc14268b05dfbbcb7146738bbaa7e882a5290cd37d0ea81",
+    "core.h": "32638a393f1c0511c6d72402a3040a838b2a33ec17a87828835fa38de07257ed",
+    "engine.c": "8daf3bf48bed0cf1dfbfca2b9d8144ac0cad2aa5d08ee6f7c64826bde5a4567b",
+    "engine.h": "d14fe284954d2f68dd22296f8263ab5b0fd9f64a3a1d8e01c19a916667b68083",
+    "scan.c": "1ca75ee412d1b9d304c84163d1e147935db629d0149060ab3b64c64e445fec4a",
+    "scan.h": "974f5ae77fd36a7d7eecd562caa67ddf91c363cf57eb81cf94be7f6f6f47dfe4",
+    "shape.c": "ca9935c47c03be396de030242a738c5294cb392d894d25b773bd68cfe517f759",
+    "shape.h": "1460d454476b2b02c7edb955787d57bf05b7d1cf38ad7895907fbebc85909095",
+    "store.c": "dd26083b9f5f6664b3975051055d9b1383fd6c13b31cd1fe282c747a6fe95a3b",
+    "store.h": "8922877eb50b62d73671c0922eabb84c498333411299e4af0a32f1722dfa2363"
+  }
+}

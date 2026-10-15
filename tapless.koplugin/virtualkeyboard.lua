@@ -96,6 +96,9 @@ local KeyboardUI = dofile(plugin_dir .. "/keyboard_ui.lua"):new{
 local RecognitionEngine = dofile(plugin_dir .. "/recognition_engine.lua")
     :new(DictionaryStore, Scoring, GeometryReranker, PersonalDictionary, ShapeChannel)
 
+-- Apply the tested refresh ordering for every gesture, independently of diagnostics.
+GestureController.refresh_batch = dofile(plugin_dir .. "/refresh_batch.lua"):new(UIManager)
+
 -- Diagnostic mode is explicitly enabled by a removable file, for at most
 -- 30 gestures. The usual keyboard does not load or wrap the profiler.
 local profile_flag = io.open(plugin_dir .. "/profile.enabled", "r")

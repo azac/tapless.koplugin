@@ -1,3 +1,5 @@
+local source_dir = debug.getinfo(1, "S").source:match("^@(.+)/[^/]+$") or "."
+local FastGate = dofile(source_dir .. "/fast_gate.lua")
 local RecognitionEngine = {}
 RecognitionEngine.__index = RecognitionEngine
 
@@ -6,16 +8,21 @@ local GEOMETRY_CANDIDATE_LIMIT = 12
 
 function RecognitionEngine:new(dictionary_store, scoring, geometry_reranker,
         personal_dictionary, shape_channel)
+    if shape_channel and scoring.matcher then
+        shape_channel.native_factory = scoring.matcher.shape_factory
+    end
     return setmetatable({
         dictionary_store = assert(dictionary_store),
         scoring = assert(scoring),
         geometry_reranker = geometry_reranker,
         personal_dictionary = personal_dictionary,
         shape_channel = shape_channel,
+        fast_gate = FastGate:new("clean"),
     }, self)
 end
 
-function RecognitionEngine:pickCandidates(options)
+function RecognitionEngine:pickCandidatesLua(options)
+    self.fast_stats = {accepted=false,attempted=false}
     local profiler = self.profiler
     if profiler then profiler:phase("scan") end
     local signature = options.signature
@@ -39,6 +46,25 @@ function RecognitionEngine:pickCandidates(options)
     local shortlist, seen = {}, {}
 
     local function scan(entries, allow_endpoint_mismatch, allow_start_mismatch)
+        local batch=self.scoring:scoreEntriesBatch(signature,entries,trace_chars,next_positions,
+            trace_info,key_centers,allow_endpoint_mismatch,allow_start_mismatch,near,
+            dictionary,data_lang,options.context_bonus,work)
+        if batch then
+            for i,entry in ipairs(entries) do
+                local result=batch.results[i-1]
+                local spatial=tonumber(result.spatial)
+                if spatial<=max_spatial then
+                    local used_near=result.used_near~=0
+                    self.scoring:addCandidate(shortlist,seen,entry,spatial,tonumber(result.ranked),
+                        math.max(limit,DYNAMIC_CANDIDATE_LIMIT),{
+                            allow_endpoint_mismatch=allow_endpoint_mismatch,
+                            allow_start_mismatch=allow_start_mismatch,
+                            allow_near=used_near,
+                            context_bonus=tonumber(batch.entries[i-1].context_bonus),entry=entry})
+                end
+            end
+            return
+        end
         for _, entry in ipairs(entries or {}) do
             if not entry.lang or entry.lang == dictionary or entry.lang == data_lang then
                 local context_bonus = options.context_bonus
@@ -79,6 +105,29 @@ function RecognitionEngine:pickCandidates(options)
             scan(bucket and bucket.by_gesture_length[length], end_mismatch, start_mismatch)
         end
     end
+    local function scoreShortlist(target, target_seen)
+        for _, candidate in ipairs(shortlist) do
+            local metadata = candidate.metadata
+            local entry = metadata and metadata.entry
+            if entry then
+                local spatial_score, ranked_score = self.scoring:scoreEntryDynamic(
+                    signature,
+                    entry,
+                    trace_chars,
+                    trace_info,
+                    key_centers,
+                    metadata.allow_endpoint_mismatch,
+                    metadata.context_bonus,
+                    metadata.allow_start_mismatch,
+                    metadata.allow_near and near or nil, nil, work)
+                if spatial_score <= max_spatial then
+                    self.scoring:addCandidate(target, target_seen, entry,
+                        spatial_score, ranked_score,
+                        math.max(limit, GEOMETRY_CANDIDATE_LIMIT))
+                end
+            end
+        end
+    end
     local starts, ends = { first }, { last }
     if #signature >= 3 and trace_info then
         if options.start_letters then starts = options.start_letters(first) end
@@ -88,6 +137,22 @@ function RecognitionEngine:pickCandidates(options)
     end
     -- Exact endpoints first; then single-end and combined boundary slips.
     scanBuckets(first, last)
+    local gate = self.fast_gate
+    if gate and self.geometry_reranker and gate:eligible(options, self.fast_stats) then
+        self.fast_stats.attempted = true
+        if profiler then profiler:phase("fast_dynamic") end
+        local fast, fast_seen = {}, {}
+        scoreShortlist(fast, fast_seen)
+        if profiler then profiler:phase("fast_rerank") end
+        fast = self.geometry_reranker:rerank(fast, trace_info, key_centers,
+            math.max(limit, GEOMETRY_CANDIDATE_LIMIT))
+        if gate:choose(fast, signature, self.scoring, self.geometry_reranker,
+                self.shape_channel, self.fast_stats) then
+            while #fast > limit do fast[#fast] = nil end
+            return fast
+        end
+        if profiler then profiler:phase("scan") end
+    end
     for index = 2, #ends do scanBuckets(first, ends[index], true) end
     for index = 2, #starts do scanBuckets(starts[index], last, false, true) end
     for a = 2, #starts do
@@ -105,27 +170,7 @@ function RecognitionEngine:pickCandidates(options)
     end
     local results, final_seen = {}, {}
     if profiler then profiler:phase("dynamic") end
-    for _, candidate in ipairs(shortlist) do
-        local metadata = candidate.metadata
-        local entry = metadata and metadata.entry
-        if entry then
-            local spatial_score, ranked_score = self.scoring:scoreEntryDynamic(
-                signature,
-                entry,
-                trace_chars,
-                trace_info,
-                key_centers,
-                metadata.allow_endpoint_mismatch,
-                metadata.context_bonus,
-                metadata.allow_start_mismatch,
-                metadata.allow_near and near or nil, nil, work)
-            if spatial_score <= max_spatial then
-                self.scoring:addCandidate(results, final_seen, entry,
-                    spatial_score, ranked_score,
-                    math.max(limit, GEOMETRY_CANDIDATE_LIMIT))
-            end
-        end
-    end
+    scoreShortlist(results, final_seen)
     local channel = self.shape_channel
     local prepared, shape_active
     if channel and self.geometry_reranker and channel:triggered(signature) then
@@ -188,6 +233,33 @@ function RecognitionEngine:pickCandidates(options)
         }
     end
     return fallback
+end
+
+function RecognitionEngine:_ensureNative()
+    local factory=self.scoring.matcher and self.scoring.matcher.engine_factory
+    if factory and not self.native then
+        local ok, native=pcall(factory,self.scoring.matcher)
+        if ok then self.native=native else self.native_reason=tostring(native) end
+    end
+    return self.native
+end
+
+function RecognitionEngine:usesNativeDictionary(dictionary)
+    local native=self:_ensureNative()
+    local store=self.dictionary_store
+    return not not (native and native.store_available and store.nativePaths
+        and store:nativePaths(dictionary or "en"))
+end
+
+function RecognitionEngine:pickCandidates(options)
+    self:_ensureNative()
+    if self.native then
+        local ok,result=pcall(self.native.candidates,self.native,self,options)
+        if ok and result then return result end
+        self.native_reason=ok and (self.native.store_reason or "unsupported whole-engine input") or tostring(result)
+        self.native_fallbacks=(self.native_fallbacks or 0)+1
+    end
+    return self:pickCandidatesLua(options)
 end
 
 return RecognitionEngine
