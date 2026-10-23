@@ -15,6 +15,21 @@ return function(dir, Original, dependencies)
     end
     local ok, ffi = pcall(deps.require_ffi or function() return require('ffi') end)
     if not ok then return fallback('FFI unavailable') end
+    -- KOReader's Android launcher sets IS_ANDROID and loads the android module.
+    -- Detect it before any glibc/ARMv7-only checks (arm64 is supported here).
+    local android = deps.android or package.loaded.android
+    if ffi.os == 'Linux' and (android or (deps.getenv or os.getenv)('IS_ANDROID')) then
+        if not android then
+            local found, value = pcall(require, 'android')
+            if not found then return fallback('Android runtime unavailable: ' .. tostring(value)) end
+            android = value
+        end
+        local selected, native = pcall(function()
+            return dofile(dir .. '/native_android.lua')(dir, Original, ffi, deps, android)
+        end)
+        if selected then return native end
+        return fallback('Android native unavailable: ' .. tostring(native))
+    end
     if ffi.os ~= 'Linux' or ffi.arch ~= 'arm' or not ffi.abi('32bit')
         or not ffi.abi('le') then return fallback('unsupported platform ABI') end
     local hardfp = ffi.abi('hardfp')

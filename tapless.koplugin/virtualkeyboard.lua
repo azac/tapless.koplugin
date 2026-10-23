@@ -124,7 +124,7 @@ if profile_flag then
     }
 end
 
-return dofile(plugin_dir .. "/koreader_adapter.lua"):new{
+local installed_keyboard = dofile(plugin_dir .. "/koreader_adapter.lua"):new{
     input_session = InputSession,
     prefetch_controller = PrefetchController,
     dictionary_store = DictionaryStore,
@@ -152,3 +152,17 @@ return dofile(plugin_dir .. "/koreader_adapter.lua"):new{
     prefetch_batch_size = 96,
     prefetch_work_ms = 3,
 }:install(VirtualKeyboard)
+
+if package.loaded.android then
+    local ok, reason = pcall(function()
+        return dofile(plugin_dir .. "/android_input_session.lua"){
+            plugin_dir = plugin_dir, android = package.loaded.android,
+            input = Device.input, keyboard = installed_keyboard,
+            controller = GestureController, collector = TraceCollector,
+            renderer = TraceRenderer, ui = UIManager, screen = Screen,
+            time = time, logger = logger,
+        }
+    end)
+    if not ok then logger.warn("Tapless: Android input unavailable", tostring(reason)) end
+end
+return installed_keyboard

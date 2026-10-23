@@ -33,15 +33,37 @@
     "status": "unchanged from installed 0.5.7"
   },
   "source_sha256": {
-    "core.c": "f91415773d0518d5fdc14268b05dfbbcb7146738bbaa7e882a5290cd37d0ea81",
-    "core.h": "32638a393f1c0511c6d72402a3040a838b2a33ec17a87828835fa38de07257ed",
-    "engine.c": "8daf3bf48bed0cf1dfbfca2b9d8144ac0cad2aa5d08ee6f7c64826bde5a4567b",
     "engine.h": "d14fe284954d2f68dd22296f8263ab5b0fd9f64a3a1d8e01c19a916667b68083",
+    "core.h": "32638a393f1c0511c6d72402a3040a838b2a33ec17a87828835fa38de07257ed",
     "scan.c": "1ca75ee412d1b9d304c84163d1e147935db629d0149060ab3b64c64e445fec4a",
-    "scan.h": "974f5ae77fd36a7d7eecd562caa67ddf91c363cf57eb81cf94be7f6f6f47dfe4",
-    "shape.c": "ca9935c47c03be396de030242a738c5294cb392d894d25b773bd68cfe517f759",
-    "shape.h": "1460d454476b2b02c7edb955787d57bf05b7d1cf38ad7895907fbebc85909095",
     "store.c": "dd26083b9f5f6664b3975051055d9b1383fd6c13b31cd1fe282c747a6fe95a3b",
-    "store.h": "8922877eb50b62d73671c0922eabb84c498333411299e4af0a32f1722dfa2363"
+    "shape.h": "1460d454476b2b02c7edb955787d57bf05b7d1cf38ad7895907fbebc85909095",
+    "core.c": "f91415773d0518d5fdc14268b05dfbbcb7146738bbaa7e882a5290cd37d0ea81",
+    "engine.c": "8daf3bf48bed0cf1dfbfca2b9d8144ac0cad2aa5d08ee6f7c64826bde5a4567b",
+    "shape.c": "ca9935c47c03be396de030242a738c5294cb392d894d25b773bd68cfe517f759",
+    "store.h": "8922877eb50b62d73671c0922eabb84c498333411299e4af0a32f1722dfa2363",
+    "scan.h": "974f5ae77fd36a7d7eecd562caa67ddf91c363cf57eb81cf94be7f6f6f47dfe4"
+  },
+  "android": {
+    "ndk": "23.2.8568313",
+    "variants": [
+      {
+        "abi": "armeabi-v7a",
+        "api": 18,
+        "file": "libtapless-core-android-armeabi-v7a.so",
+        "target": "armv7a-linux-androideabi18",
+        "bytes": 33956,
+        "sha256": "ed7001c7a173d0c399831245794402b84301a47b97e7388cc445813b24dcf009"
+      },
+      {
+        "abi": "arm64-v8a",
+        "api": 21,
+        "file": "libtapless-core-android-arm64-v8a.so",
+        "target": "aarch64-linux-android21",
+        "bytes": 39944,
+        "sha256": "2c9442e9007a955ec5c3e2c596c11227e9cbc0911b89a8f7113ed3daef93769e"
+      }
+    ],
+    "segment_alignment": 16384
   }
 }

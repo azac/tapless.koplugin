@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+
+- native C acceleration on Androids
+- improved swipe input and reduced flashing on InkBook Calypso Plus
+
+
 ## 0.6.0
 
 - native C acceleration for dictionary lookup and swipe recognition
